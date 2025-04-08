@@ -17,12 +17,12 @@
 
 - Python 3.10+（推荐3.11）
 - 所需库列在`requirements.txt`中：
-  requests>=2.31.0
-  fake-useragent>=1.5.1
-  eth-account>=0.13.3
-  mnemonic>=0.20
-  pycryptodome>=3.20.0
-  charset-normalizer>=3.3.2
+  - requests>=2.31.0
+  - fake-useragent>=1.5.1
+  - eth-account>=0.13.3
+  - mnemonic>=0.20
+  - pycryptodome>=3.20.0
+  - charset-normalizer>=3.3.2
 
 ## 如何克隆仓库
 
