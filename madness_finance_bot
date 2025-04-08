@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+-------------------------------------------------
+   File Name：     madness_finance_bot.py
+   Description :
+   Author :       LWM
+   date：          2025/4/9
+-------------------------------------------------
+   Change Activity:
+                   2025/4/9:
+-------------------------------------------------
+"""
+import requests
+import random
+import time
+import csv
+import json
+import os
+from fake_useragent import UserAgent
+from eth_account import Account  # pip install eth-account
+from mnemonic import Mnemonic  # pip install mnemonic
+import logging
+from datetime import datetime, timedelta
+
+# 设置日志
+logging.basicConfig(filename='register.log', level=logging.INFO,
+                    format='%(asctime)s - %(message)s')
+
+# 初始化User-Agent
+ua = UserAgent()
+
+# 初始化助记词生成器
+mnemo = Mnemonic("english")
+
+
+# 读取配置文件
+def load_config():
+    with open('config.json', 'r') as f:
+        return json.load(f)
+
+
+# 生成随机伪装IP
+def generate_fake_ip():
+    return f"{random.randint(1, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(1, 254)}"
+
+
+# 生成唯一的headers
+def generate_headers():
+    user_agent = ua.random
+    fake_ip = generate_fake_ip()
+    chrome_version = random.randint(122, 130)  # Chrome版本在122-130之间随机
+    sec_ch_ua = f'"Chromium";v="{chrome_version}", "Google Chrome";v="{chrome_version}", "Not?A_Brand";v="99"'
+
+    return {
+        "Accept": "*/*",
+        "Accept-Language": random.choice(["en,en-US;q=0.9", "zh-CN,zh;q=0.9", "es,es-ES;q=0.9"]),
+        "Connection": "keep-alive",
+        "Content-Type": "application/json",
+        "Origin": "https://madness.finance",
+        "Referer": "https://madness.finance/exp?ref=MGJRDZ",
+        "User-Agent": user_agent,
+        "sec-ch-ua": sec_ch_ua,
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": random.choice(['"macOS"', '"Windows"', '"Linux"']),
+        "x-api-key": "madness-9w1dawd8a962d",
+        "X-Forwarded-For": fake_ip,
+        "Client-IP": fake_ip,
+        "Via": f"1.1 {fake_ip}",
+        "Host": fake_ip
+    }
+
+
+# 保存账户信息到CSV文件
+def save_account(wallet_address, private_key, mnemonic, success, user_id=None, headers=None):
+    csv_file = 'accounts.csv'
+    file_exists = os.path.isfile(csv_file)
+    with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+        fieldnames = ['address', 'private_key', 'mnemonic', 'registered_success', 'user_id', 'headers', 'last_checkin',
+                      'timestamp']
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerow({
+            'address': wallet_address,
+            'private_key': private_key,
+            'mnemonic': mnemonic,
+            'registered_success': success,
+            'user_id': user_id,
+            'headers': json.dumps(headers) if headers else '',
+            'last_checkin': '',
+            'timestamp': datetime.now().isoformat()
+        })
+
+
+# 更新签到状态
+def update_checkin_status(wallet_address, success):
+    csv_file = 'accounts.csv'
+    temp_file = 'accounts_temp.csv'
+    with open(csv_file, 'r', encoding='utf-8') as f, open(temp_file, 'w', newline='', encoding='utf-8') as temp:
+        fieldnames = ['address', 'private_key', 'mnemonic', 'registered_success', 'user_id', 'headers', 'last_checkin',
+                      'timestamp']
+        reader = csv.DictReader(f)
+        writer = csv.DictWriter(temp, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for row in reader:
+            if row['address'] == wallet_address and success:
+                row['last_checkin'] = datetime.now().isoformat()
+            writer.writerow(row)
+
+    os.replace(temp_file, csv_file)
+
+
+# 生成随机钱包地址、私钥和助记词
+def generate_wallet():
+    mnemonic = mnemo.generate(strength=256)
+    seed = mnemo.to_seed(mnemonic)
+    account = Account.from_key(seed[:32])
+    return account.address, account._private_key.hex(), mnemonic
+
+
+# 签到请求
+def checkin(wallet_address, headers, user_id, retries=3):
+    payload = {
+        "taskId": "67cab35dea568701db792ff1",  # 固定值，需确认来源
+        "userId": user_id
+    }
+
+    for attempt in range(retries):
+        try:
+            response = requests.post(
+                "https://madness.finance/api/progress",
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            if response.status_code == 200:
+                logging.info(f"签到成功: {wallet_address} (伪装IP: {headers['X-Forwarded-For']})")
+                return True
+            else:
+                logging.warning(f"签到失败 {wallet_address}: {response.status_code} - {response.text}")
+                time.sleep(random.uniform(5, 10))
+                continue
+        except Exception as e:
+            logging.error(f"签到请求异常 {wallet_address}: {e}")
+            time.sleep(random.uniform(5, 10))
+            continue
+
+    logging.error(f"签到多次尝试失败: {wallet_address}")
+    return False
+
+
+# 注册请求
+def register_account(wallet_address, referral_code="MGJRDZ", retries=3):
+    headers = generate_headers()
+
+    payload = {
+        "account": wallet_address,
+        "referredBy": referral_code
+    }
+
+    for attempt in range(retries):
+        try:
+            response = requests.post(
+                "https://madness.finance/api/create",
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            if response.status_code == 200:
+                logging.info(f"成功注册: {wallet_address} (伪装IP: {headers['X-Forwarded-For']})")
+                response_data = response.json()
+                if response_data.get("code") == "success" and "data" in response_data:
+                    user_id = response_data["data"]["user"]["_id"]
+                    return True, user_id, headers
+                else:
+                    logging.error(f"注册响应格式异常: {wallet_address} - {response.text}")
+                    return True, None, headers
+            else:
+                logging.warning(f"注册失败 {wallet_address}: {response.status_code} - {response.text}")
+                time.sleep(random.uniform(5, 10))
+                continue
+        except Exception as e:
+            logging.error(f"请求异常 {wallet_address}: {e}")
+            time.sleep(random.uniform(5, 10))
+            continue
+
+    logging.error(f"多次尝试失败: {wallet_address}")
+    return False, None, None
+
+
+# 创建或增量创建钱包
+def create_wallets(wallet_count):
+    print(f"检查并创建/增量创建至 {wallet_count} 个钱包...")
+    logging.info(f"检查并创建/增量创建至 {wallet_count} 个钱包...")
+
+    existing_wallets = set()
+    if os.path.exists('accounts.csv'):
+        with open('accounts.csv', 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                existing_wallets.add(row['address'])
+
+    created = len(existing_wallets)
+    if created >= wallet_count:
+        logging.info(f"已有 {created} 个钱包，无需创建更多！")
+        return
+
+    print(f"当前有 {created} 个钱包，将创建 {wallet_count - created} 个新钱包...")
+    while created < wallet_count:
+        wallet_address, private_key, mnemonic = generate_wallet()
+        if wallet_address in existing_wallets:
+            continue
+
+        success, user_id, headers = register_account(wallet_address)
+        save_account(wallet_address, private_key, mnemonic, success, user_id, headers)
+        created += 1
+        print(f"已创建 {created}/{wallet_count} 个钱包")
+        time.sleep(random.uniform(10, 30))
+
+    logging.info("钱包创建/增量创建完成！")
+
+
+# 每天签到任务
+def daily_checkin():
+    if not os.path.exists('accounts.csv'):
+        print("未找到accounts.csv，请先创建钱包！")
+        return
+
+    wallets = []
+    with open('accounts.csv', 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row['registered_success'] == 'True' and row['user_id'] and row['headers']:
+                last_checkin = row['last_checkin']
+                if not last_checkin or (datetime.now() - datetime.fromisoformat(last_checkin)).days >= 1:
+                    headers = json.loads(row['headers'])
+                    wallets.append((row['address'], row['user_id'], headers))
+
+    if not wallets:
+        print("没有需要签到的钱包！")
+        return
+
+    print(f"开始每日签到任务，共 {len(wallets)} 个钱包...")
+    logging.info(f"开始每日签到任务，共 {len(wallets)} 个钱包...")
+
+    for wallet_address, user_id, headers in wallets:
+        checkin_success = checkin(wallet_address, headers, user_id)
+        if checkin_success:
+            update_checkin_status(wallet_address, True)
+        time.sleep(random.uniform(10, 30))
+
+    print("每日签到任务完成！")
+    logging.info("每日签到任务完成！")
+
+
+# 主程序
+if __name__ == "__main__":
+    config = load_config()
+    wallet_count = config.get("wallet_count", 100)  # 默认100个
+
+    # 创建或增量创建钱包
+    create_wallets(wallet_count)
+
+    # 每天签到循环
+    while True:
+        daily_checkin()
+        now = datetime.now()
+        next_day = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        wait_seconds = (next_day - now).total_seconds()
+        print(f"等待下一天签到: {wait_seconds / 3600:.2f} 小时")
+        time.sleep(wait_seconds)
