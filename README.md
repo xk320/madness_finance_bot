@@ -30,6 +30,7 @@
 2. 在终端运行以下命令克隆仓库：
  ```bash
  git clone https://github.com/xk320/madness_finance_bot.git
+ cd madness_finance_bot
  ```
 ## 安装
 1.创建并激活虚拟环境(可选):
